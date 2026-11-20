@@ -14,7 +14,8 @@ create table Usuario(
     apellido varchar(50) not null,
     telefono varchar(20),
     email varchar(100) unique,
-    password_hash varchar(255) not null
+    password_hash varchar(255) not null,
+    tipo_usuario VARCHAR(20) NOT NULL DEFAULT 'empleado'
 );
 
 create table Sala(
@@ -47,16 +48,3 @@ create table Reserva(
     on update cascade
     on delete restrict
 );
-
-/*
-datos de prueba
-
-insert into Sala (nombre, ubicacion, capacidad, estado)
-values
-('Sala A-101', 'Primer piso',20,'Disponible'),
-('Sala B-202', 'Segundo piso',35,'En mantenimiento'),
-('Laboratorio C-301', 'Tercer piso',25,'Disponible');
-
-select id_sala, nombre, ubicacion, capacidad, estado
-from Sala 
-order by nombre;*/
