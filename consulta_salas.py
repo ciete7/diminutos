@@ -1,15 +1,17 @@
+import os
+import hashlib
 from abc import ABC, abstractmethod
-from conexion import obtener_conexion
+from conexion import Conexion, ActiveRecord
 
 class Usuario(ABC):
-    def __init__(self, id_usuario: int, username: str, nombre: str, apellido: str, telefono: str, email: str):
+    def __init__(self, id_usuario: int, username: str, nombre: str, apellido: str, telefono: str, email: str, password_hash: str):
         self.__id_usuario = id_usuario
         self.__username = username
         self.__nombre = nombre
         self.__apellido = apellido
         self.__telefono = telefono
         self.__email = email
-        self.__password_hash = __password_hash
+        self.__password_hash = password_hash
 
     def obtener_id(self):
         return self.__id_usuario
@@ -32,18 +34,19 @@ class Usuario(ABC):
     def obtener_password_hash(self):
         return self.__password_hash
 
-    def crear_usuario(cls, username: str, nombre: str, apellido: str, telefono: str, email: str, password_hash: str, tipo_usuario: str = 'empleado', confirmar: bool = True
-    ) -> int:
+    @classmethod
+    def crear_usuario(cls, username: str, nombre: str, apellido: str, telefono: str, email: str, password: str, tipo_usuario: str = 'empleado', confirmar: bool = True) -> int:
         cnn = Conexion().obtener_conexion()
         cursor = cnn.cursor()
+        password_hash = cls.generar_hash(password)
         sql = """
-        INSERT INTO Usuario (username, nombre, apellido, telefono, email, password_hash)
-        VALUES (%s,%s,%s,%s,%s,%s) 
+        INSERT INTO Usuario (username, nombre, apellido, telefono, email, password_hash, tipo_usuario)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) 
         """
         try:
             cursor.execute(
                 sql, 
-                (username, nombre, apellido, telefono, email, password_hash)
+                (username, nombre, apellido, telefono, email, password_hash, tipo_usuario)
             )
             id_usuario = cursor.lastrowid
             if confirmar: 
@@ -57,31 +60,20 @@ class Usuario(ABC):
             cursor.close()
     
     @staticmethod
-    def generar_hash(password):
+    def generar_hash(password: str) -> str:
         salt = os.urandom(32)
-        hash_password = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode(),
-            salt,
-            100000
-        )
+        hash_password = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
         return salt.hex() + ":" + hash_password.hex()
 
     @staticmethod
-    def verificar_password(password, hash_guardado):
-
-        salt_hex, hash_hex = hash_guardado.split(":")
-
+    def verificar_password(password: str, hash_guardado: str) -> bool:
+        if not hash_guardado or ":" not in hash_guardado:
+            return False
+        salt_hex, hash_hex = hash_guardado.split(":", 1)
         salt = bytes.fromhex(salt_hex)
-
-        hash_calculado = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode(),
-            salt,
-            100000
-        )
-
+        hash_calculado = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
         return hash_calculado.hex() == hash_hex
+
     
     @classmethod
     def iniciar_sesion(cls, username: str, password: str):
@@ -89,11 +81,7 @@ class Usuario(ABC):
         cursor = cnn.cursor()
 
         sql = """
-        SELECT
-            id_usuario,
-            username,
-            password_hash,
-            tipo_usuario
+        SELECT id_usuario, username, nombre, apellido, telefono, email, password_hash, tipo_usuario
         FROM Usuario
         WHERE username = %s
         """
@@ -104,45 +92,33 @@ class Usuario(ABC):
         if registro is None:
             return None
 
-        id_usuario = registro[0]
-        username = registro[1]
-        password_hash_db = registro[2]
-        tipo_usuario = registro[3]
+        id_usuario, username, nombre, apellido, telefono, email, password_hash_db, tipo_usuario = registro
 
-        if not Usuario.verificar_password(
-            password, password_hash_db
-        ):
+        if not cls.verificar_password(password, password_hash_db):
             return None
         
         if tipo_usuario.lower() == "administrador":
-            return Administrador(
-                id_usuario, username, password_hash_db
-            )
-
-        for u in Usuario.buscar_todos():
-            if Usuario().obtener_id() == id_usuario:
-                return eliminar
-        
-        return None
+            return Administrador(id_usuario, username, nombre, apellido, telefono, email, password_hash_db)
+        else:
+            return Empleado(id_usuario, username, nombre, apellido, telefono, email, password_hash_db)
 
     @abstractmethod
     def mostrar(self):
         pass
 
-    def obtener_id_usuario(self):
-        return self.__id_usuario
 
-    def verificar_password_hash(self, password: str):
-        hash_password = hashlib.sha256(
-        password.encode()).hexdigest()
-        return self.__password_hash == hash_password
+class Administrador(Usuario):
+    def mostrar(self):
+        return f"Admin: {self.obtener_nombre()} {self.obtener_apellido()}"
 
-    def autentificar(self, username: str, password: str):
-        return (self.__username == username and self.verificar_password_hash(password)
-        )
+
+class Empleado(Usuario):
+    def mostrar(self):
+        return f"Empleado: {self.obtener_nombre()} {self.obtener_apellido()}"
+
 
 class Sala(ActiveRecord):
-    def __init__(self, id_sala: int, nombre: str, ubicacion: str, capacidad: int, estado):
+    def __init__(self, id_sala: int, nombre: str, ubicacion: str, capacidad: int, estado: str):
         self.__id_sala = id_sala
         self.__nombre = nombre
         self.__ubicacion = ubicacion
@@ -164,24 +140,40 @@ class Sala(ActiveRecord):
     def obtener_estado(self):
         return self.__estado
 
-    def buscar_por_id(cls, id) -> Usuario|None:
+    def guardar(self):
+        pass
+
+    def actualizar(self) -> None:
+        pass
+
+    def eliminar(self) -> None:
+        pass
+
+    @classmethod
+    def buscar_por_id(cls, id_sala: int):
         cnn = Conexion().obtener_conexion()
         cursor = cnn.cursor()
-        sql = """
-        SELECT u.id_usuario, u.username, u.nombre, u.apellido, u.telefono, u.email, u.password_hash
-        FROM Usuario u
-        WHERE u.id_usuario = %s
-        """
-        cursor.execute(sql,(id,))
-        reserva = cursor.fetchone()
+        sql = "SELECT id_sala, nombre, ubicacion, capacidad, estado FROM Sala WHERE id_sala = %s"
+        cursor.execute(sql, (id_sala,))
+        fila = cursor.fetchone()
         cursor.close()
-        if reserva:
-            return cls(reserva[0],reserva[1], reserva[2], reserva[3],reserva[4], reserva[5], reserva[6])
-        else:
-            return None
-            
-class Reserva:
-    def __init__(self, usuario, sala, fecha, hora):
+        if fila:
+            return cls(fila[0], fila[1], fila[2], fila[3], fila[4])
+        return None
+
+    @classmethod
+    def buscar_todos(cls):
+        cnn = Conexion().obtener_conexion()
+        cursor = cnn.cursor()
+        sql = "SELECT id_sala, nombre, ubicacion, capacidad, estado FROM Sala"
+        cursor.execute(sql)
+        filas = cursor.fetchall()
+        cursor.close()
+        return [cls(f[0], f[1], f[2], f[3], f[4]) for f in filas]
+
+
+class Reserva(ActiveRecord):
+    def __init__(self, usuario: Usuario, sala: Sala, fecha: str, hora: str, id_reserva: int = None):
         self.__id_reserva = id_reserva
         self.__usuario = usuario
         self.__sala = sala
@@ -189,7 +181,7 @@ class Reserva:
         self.__hora = hora
 
     def obtener_id(self):
-        return self.__id_reverva
+        return self.__id_reserva
 
     def obtener_usuario(self):
         return self.__usuario
@@ -209,16 +201,10 @@ class Reserva:
         cnn = Conexion().obtener_conexion()
         cursor = cnn.cursor()
         try:
-            cursor.execute("""
-            INSERT INTO Reserva
-                (id_usuario, id_sala, fecha, hora)
-            VALUES (%s,%s,%s,%s)
-            """, (
-                self.__usuario.obtener_id(),
-                self.__sala.obtener_id(),
-                self.__fecha,
-                self.__hora
-            ))
+            cursor.execute(
+                "INSERT INTO Reserva (id_usuario, id_sala, fecha, hora) VALUES (%s, %s, %s, %s)",
+                (self.__usuario.obtener_id(), self.__sala.obtener_id(), self.__fecha, self.__hora)
+            )
             self.__id_reserva = cursor.lastrowid
             cnn.commit()
         except Exception:
@@ -229,7 +215,7 @@ class Reserva:
 
     def actualizar(self):
         if self.__id_reserva is None:
-            raise ValueError('La reserva debe estar guardada ants de actualizarla.')
+            raise ValueError('La reserva debe estar guardada antes de actualizarla.')
         cnn = Conexion().obtener_conexion()
         cursor = cnn.cursor()
         try:
@@ -239,13 +225,7 @@ class Reserva:
                 SET id_sala = %s, fecha = %s, hora = %s
                 WHERE id_reserva = %s AND id_usuario = %s
                 """,
-                (
-                    self.__sala.obtener_id(),
-                    self.__fecha,
-                    self.__horas,
-                    self.__id_reserva,
-                    self.__usuario.obtener_id()
-                )
+                (self.__sala.obtener_id(), self.__fecha, self.__hora, self.__id_reserva, self.__usuario.obtener_id())
             )
             if cursor.rowcount == 0:
                 raise ValueError('No se encontró la reserva seleccionada para ese usuario.')
@@ -259,18 +239,15 @@ class Reserva:
     def eliminar(self):
         if self.__id_reserva is None:
             raise ValueError('La reserva debe estar guardada antes de eliminarla.')
-        cnn = Conexcion().obtener_conexion()
+        cnn = Conexion().obtener_conexion()
         cursor = cnn.cursor()
         try:
             cursor.execute(
                 "DELETE FROM Reserva WHERE id_reserva = %s AND id_usuario = %s",
-                (
-                    self.__id_reserva,
-                    self.__usuario.obtener_id()
-                )
+                (self.__id_reserva, self.__usuario.obtener_id())
             )
             if cursor.rowcount == 0:
-                raise ValueError('No se encontró reserva selecionada para este usuario')
+                raise ValueError('No se encontró reserva seleccionada para este usuario')
             cnn.commit()
         except Exception:
             cnn.rollback()
@@ -278,43 +255,10 @@ class Reserva:
         finally:
             cursor.close()
 
-    def buscar_por_usuario(cls, id_usuario: int):
-        cnn = Conexion().obtener_conexion()
-        cursor = cnn.cursor()
-        try:
-            cursor.execute(
-                """
-                SELECT id_reserva, id_usuario, id_sala, fecha, hora
-                FROM Reserva
-                WHERE id_usuario = %s
-                ORDER BY fecha DESC, id_reserva DESC
-                """,
-                (id_usuario,)
-            )
-            filas = cursor.fetchall()
-        finally:
-            cursor.close()
-        reservas = []
-        for id_reserva, id_usuario, id_sala, fecha, hora in filas:
-            usuario = Usuario.buscar_por_id(id_usuario)
-            sala = Sala.buscar_por_id(id_sala)
-            if empleado is None or Sala is None:
-                raise ValueError(f'La reserva {id_reserva} tiene un Usuario o sala inexistente.')
-            reservas.append(cls(id_usuario, id_sala, fecha, hora))
-        return reserva
+    @classmethod
+    def buscar_por_id(cls, id_reserva: int):
+        pass
 
-    def __str__(self):
-        return f"{self.__fecha} - {self.__horas}"
-
-def obtener_salas():
-    conexion=obtener_conexion()
-    cursor = conexion.cursor()
-
-    consulta ='SELECT id_sala, nombre, ubicacion, capacidad, estado FROM Sala ORDER BY nombre'
-    
-    cursor.execute(consulta)
-    salas=cursor.fetchall()
-    cursor.close()
-    conexion.close()
-    return salas
-
+    @classmethod
+    def buscar_todos(cls):
+        pass
