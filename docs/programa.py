@@ -54,7 +54,7 @@ def ventana_login():
                 usuario_tipo_actual = "empleado"
 
             login.destroy()
-            main()  # Asegúrate de tener definida esta función
+            #main()  # Asegúrate de tener definida esta función
         except Exception as e:
             mostrar_ventana("error", f"Error al iniciar sesión:\n{e}", login)
 
