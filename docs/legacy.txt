@@ -1,0 +1,1 @@
+Esta carpeta contiene los archivos antiguos que se usaron para probar la funcion del codigo
