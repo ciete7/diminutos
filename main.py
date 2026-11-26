@@ -1,7 +1,7 @@
-from consulta_salas import obtener_salas
+from consulta_salas import obtener_sala
 
 def mostrar_salas():
-    salas=obtener_salas()
+    salas=obtener_sala()
 
     print('===== Listado de salas =====')
 
